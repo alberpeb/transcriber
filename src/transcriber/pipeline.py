@@ -1,68 +1,29 @@
 """Transcribe audio/vídeo, identifica quién habla y deja una versión revisada.
 
-Tres pasos, cada uno en su propio proceso:
+Cuatro pasos; los pesados corren cada uno en su propio proceso y entorno:
 
-  1. ASR            Whisper (faster-whisper), con recuperación de tramos perdidos.
-  2. Diarización    pyannote, que dice cuándo cambia la voz.
-  3. Revisión       un modelo de lenguaje pone los nombres reales leyendo el
+  1. Audio          ffmpeg lo pasa a WAV 16 kHz mono.
+  2. ASR            Whisper (faster-whisper), con recuperación de tramos perdidos.
+  3. Diarización    pyannote, que dice cuándo cambia la voz.
+  4. Revisión       un modelo de lenguaje pone los nombres reales leyendo el
                     contenido, porque la diarización sola se equivoca cuando la
                     grabación es pobre.
 
-ASR y diarización corren separados a propósito: ctranslate2 usa CUDA 12 y torch
-usa CUDA 13, y en el mismo proceso se pisan las librerías de cuDNN.
+ASR y diarización corren separados a propósito: ctranslate2 usa CUDA 12 y el
+torch de pyannote trae otro CUDA, y en el mismo proceso se pisan las librerías
+de cuDNN. Este orquestador usa solo la stdlib.
 """
 
 import argparse
 import json
-import os
+import platform
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-HERE = Path(__file__).parent
-TOOLS = Path.home() / ".local/share/uv/tools"
-WHISPER_ENV = TOOLS / "whisper-ctranslate2"          # ctranslate2, CUDA 12
-WHISPER_NV = WHISPER_ENV / "lib/python3.12/site-packages/nvidia"
-PYANNOTE_ENV = TOOLS / "pyannote-audio"              # torch, CUDA 13
-CONTEXT = Path.home() / ".config/transcriber/context.md"
-
-
-def utf8_console():
-    """En Windows la consola es cp1252 y rompe con tildes y eñes."""
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
-
-
-def log(msg):
-    print(msg, file=sys.stderr, flush=True)
-
-
-def have_gpu():
-    try:
-        subprocess.run(["nvidia-smi", "-L"], check=True, capture_output=True)
-        return (WHISPER_NV / "cublas/lib/libcublas.so.12").exists()
-    except Exception:
-        return False
-
-
-def duration_of(path: Path) -> float:
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
-        capture_output=True, text=True, encoding="utf-8", check=True,
-    )
-    return float(out.stdout.strip())
-
-
-def to_wav16k(src: Path, dst: Path):
-    """pyannote y whisper quieren 16 kHz mono; ffmpeg lee cualquier contenedor."""
-    subprocess.run(
-        ["ffmpeg", "-loglevel", "error", "-y", "-i", str(src),
-         "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(dst)],
-        check=True,
-    )
+from . import hardware, paths
+from .util import duration_of, hhmmss, log, srt_time, to_wav16k, token_hint, utf8_console
 
 
 def vocabulary(context: str) -> str:
@@ -78,25 +39,32 @@ def vocabulary(context: str) -> str:
     return ", ".join(seen) + "." if seen else ""
 
 
-def run_asr(wav, model, language, device, out, prompt_file, seconds):
-    env = dict(os.environ)
-    if device == "cuda":
-        libs = [WHISPER_NV / d / "lib" for d in ("cublas", "cudnn", "cuda_nvrtc")]
-        env["LD_LIBRARY_PATH"] = ":".join(
-            [str(p) for p in libs] + [env.get("LD_LIBRARY_PATH", "")]
+def run_worker(python, script, args, step, env=None):
+    """Corre un paso en su entorno. Siempre con lista de argumentos, nunca shell."""
+    try:
+        subprocess.run(
+            [str(python), str(paths.worker(script)), *[str(a) for a in args]],
+            check=True, env=env,
         )
-    subprocess.run(
-        [str(WHISPER_ENV / "bin/python3"), str(HERE / "_asr.py"), str(wav), model,
-         language or "", device, str(out), str(prompt_file), str(seconds)],
-        check=True, env=env,
+    except subprocess.CalledProcessError as e:
+        raise SystemExit(
+            f"Falló {step} (código {e.returncode}). "
+            "Corré `transcriber doctor` para revisar la instalación."
+        ) from None
+
+
+def run_asr(python, wav, model, language, device, out, prompt_file, seconds):
+    run_worker(
+        python, "_asr.py",
+        [wav, model, language or "", device, out, prompt_file, seconds],
+        "la transcripción", env=paths.asr_child_env(python),
     )
 
 
-def run_diar(wav, device, min_spk, max_spk, out):
-    subprocess.run(
-        [str(PYANNOTE_ENV / "bin/python3"), str(HERE / "_diar.py"), str(wav), device,
-         str(min_spk or "-"), str(max_spk or "-"), str(out)],
-        check=True,
+def run_diar(python, wav, device, min_spk, max_spk, out):
+    run_worker(
+        python, "_diar.py", [wav, device, min_spk or "-", max_spk or "-", out],
+        "la separación de voces",
     )
 
 
@@ -136,20 +104,6 @@ def group(words, turns):
     return [b for b in blocks if b["text"]]
 
 
-def hhmmss(sec):
-    h, rem = divmod(int(sec), 3600)
-    m, s = divmod(rem, 60)
-    return f"{h:02d}:{m:02d}:{s:02d}"
-
-
-def srt_time(sec):
-    ms = int(round(sec * 1000))
-    h, ms = divmod(ms, 3_600_000)
-    m, ms = divmod(ms, 60_000)
-    s, ms = divmod(ms, 1000)
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-
-
 def write_outputs(blocks, src: Path, outdir: Path, language: str):
     base = outdir / src.stem
 
@@ -179,10 +133,12 @@ def write_outputs(blocks, src: Path, outdir: Path, language: str):
     return base, payload
 
 
-def main():
+def main(argv=None):
     utf8_console()
+    context_default = paths.context_path()
     p = argparse.ArgumentParser(
-        description="Transcribe vídeo/audio, identifica quién habla y revisa el resultado."
+        prog="transcribe-speakers",
+        description="Transcribe vídeo/audio, identifica quién habla y revisa el resultado.",
     )
     p.add_argument("input", type=Path)
     p.add_argument("-o", "--output-dir", type=Path)
@@ -190,20 +146,36 @@ def main():
     p.add_argument("-m", "--model", default="large-v3-turbo")
     p.add_argument("--min-speakers", type=int)
     p.add_argument("--max-speakers", type=int)
-    p.add_argument("--context", type=Path, default=CONTEXT,
-                   help=f"Quiénes hablan y vocabulario (por defecto: {CONTEXT})")
+    p.add_argument("--context", type=Path, default=context_default,
+                   help=f"Quiénes hablan y vocabulario (por defecto: {context_default})")
     p.add_argument("--no-refine", action="store_true",
                    help="No pasar la revisión final por el modelo de lenguaje")
     p.add_argument("--cpu", action="store_true", help="Forzar CPU (~20x más lento)")
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     if not args.input.exists():
         raise SystemExit(f"No existe: {args.input}")
-    if not os.environ.get("HF_TOKEN"):
-        raise SystemExit("Falta HF_TOKEN. Ponelo en ~/.bashrc: export HF_TOKEN=hf_...")
 
-    device = "cpu" if args.cpu else ("cuda" if have_gpu() else "cpu")
-    if device == "cpu":
+    asr_python, _ = paths.find_env("asr")
+    diar_python, _ = paths.find_env("diar")
+    if asr_python is None or diar_python is None:
+        raise SystemExit("Faltan los entornos de Whisper y pyannote. Corré: transcriber setup")
+    if paths.hf_token()[0] is None:
+        raise SystemExit(
+            "Falta el token de HuggingFace para el modelo de voces.\n"
+            f"  {token_hint()}\n"
+            "Y aceptá las condiciones en "
+            "https://huggingface.co/pyannote/speaker-diarization-community-1"
+        )
+
+    system = platform.system()
+    gpu = hardware.nvidia_gpu()
+    asr_device = hardware.asr_device(
+        args.cpu, system, gpu is not None,
+        paths.has_cuda_libs(paths.env_dir_of(asr_python), system),
+    )
+    diar_device = hardware.diar_device(args.cpu, system, platform.machine(), gpu is not None)
+    if diar_device == "cpu":
         log("Aviso: sin GPU la diarización va ~20x más lenta.")
 
     outdir = args.output_dir or args.input.parent
@@ -221,11 +193,12 @@ def main():
         log(f"[1/4] Extrayendo audio de {args.input.name} ({hhmmss(seconds)})...")
         to_wav16k(args.input, wav)
 
-        log(f"[2/4] Transcribiendo ({args.model}, {device})...")
-        run_asr(wav, args.model, args.language, device, asr_out, prompt_file, seconds)
+        log(f"[2/4] Transcribiendo ({args.model}, {asr_device})...")
+        run_asr(asr_python, wav, args.model, args.language, asr_device, asr_out,
+                prompt_file, seconds)
 
-        log(f"[3/4] Separando voces ({device})...")
-        run_diar(wav, device, args.min_speakers, args.max_speakers, diar_out)
+        log(f"[3/4] Separando voces ({diar_device})...")
+        run_diar(diar_python, wav, diar_device, args.min_speakers, args.max_speakers, diar_out)
 
         asr = json.loads(asr_out.read_text(encoding="utf-8"))
         turns = json.loads(diar_out.read_text(encoding="utf-8"))
@@ -249,7 +222,7 @@ def main():
                 f"La separación automática encontró {len(payload['speakers'])} voces.")
         had_old = revisado.exists()
         done = subprocess.run(
-            [sys.executable, str(HERE / "_refine.py"), str(raw), str(args.context),
+            [sys.executable, str(paths.worker("_refine.py")), str(raw), str(args.context),
              meta, str(revisado)]
         ).returncode == 0
         if not done:

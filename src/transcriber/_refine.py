@@ -108,13 +108,19 @@ def refine(raw_text: str, context: str, meta: str) -> str | None:
     return text
 
 
-if __name__ == "__main__":
-    for _s in (sys.stdout, sys.stderr):
-        if hasattr(_s, "reconfigure"):
-            _s.reconfigure(encoding="utf-8", errors="replace")
-    raw_path, ctx_path, meta, out_path = sys.argv[1:5]
-    context = Path(ctx_path).read_text(encoding="utf-8") if Path(ctx_path).exists() else "(sin contexto)"
+def main(argv):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    raw_path, ctx_path, meta, out_path = argv[:4]
+    ctx = Path(ctx_path)
+    context = ctx.read_text(encoding="utf-8") if ctx.is_file() else "(sin contexto)"
     result = refine(Path(raw_path).read_text(encoding="utf-8"), context, meta)
     if result is None:
-        sys.exit(2)
+        return 2
     Path(out_path).write_text(result + "\n", encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

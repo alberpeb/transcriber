@@ -14,7 +14,9 @@ el entorno pesado.
 """
 
 import json
+import os
 import sys
+import wave
 from pathlib import Path
 
 SAMPLE_RATE = 16000
@@ -26,6 +28,34 @@ LOW_CONFIDENCE = 0.6
 
 def log(msg):
     print(msg, file=sys.stderr, flush=True)
+
+
+def add_dll_dirs():
+    """Windows: registra las DLL de cuBLAS y cuDNN antes de importar ctranslate2."""
+    if not hasattr(os, "add_dll_directory"):
+        return
+    for d in os.environ.get("TRANSCRIBER_DLL_DIRS", "").split(os.pathsep):
+        if d and os.path.isdir(d):
+            os.add_dll_directory(d)
+
+
+def load_wav(path):
+    """WAV de 16 kHz PCM de 16 bits -> float32 mono en [-1, 1].
+
+    Se lee con la stdlib y numpy en vez de con el decodificador de faster-whisper:
+    ese usa PyAV, y faster-whisper 1.2.1 se rompe con las versiones nuevas de PyAV.
+    Como el WAV ya lo dejó ffmpeg en el formato justo, da exactamente lo mismo.
+    """
+    import numpy as np
+
+    with wave.open(str(path), "rb") as w:
+        if w.getsampwidth() != 2 or w.getframerate() != SAMPLE_RATE:
+            raise SystemExit("El WAV tiene que ser PCM de 16 bits a 16 kHz.")
+        channels = w.getnchannels()
+        data = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
+    if channels > 1:
+        data = data.reshape(-1, channels).mean(axis=1)
+    return data.astype(np.float32) / 32768.0
 
 
 def find_gaps(words, duration, gap=GAP):
@@ -105,7 +135,8 @@ def main(argv):
     wav, model_name, language, device, out, prompt_path, duration = argv[:7]
     duration = float(duration)
 
-    from faster_whisper import WhisperModel, decode_audio
+    add_dll_dirs()
+    from faster_whisper import WhisperModel
 
     # Sesga el reconocimiento hacia los nombres y el vocabulario del proyecto.
     initial_prompt = None
@@ -125,7 +156,7 @@ def main(argv):
 
     # El WAV ya viene en 16 kHz mono: se carga una vez y de ahí salen las ventanas
     # de idioma y los recortes de los huecos.
-    audio = decode_audio(wav, sampling_rate=SAMPLE_RATE)
+    audio = load_wav(wav)
 
     confidence, votes = 1.0, []
     if not language:
@@ -171,4 +202,9 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    # Este archivo se ejecuta por ruta: Python pone su carpeta primera en sys.path
+    # y los módulos del paquete (util.py, paths.py...) taparían a cualquier otro
+    # que se llame igual. Se saca antes de importar nada pesado.
+    _here = os.path.dirname(os.path.abspath(__file__))
+    sys.path[:] = [p for p in sys.path if os.path.abspath(p or ".") != _here]
     main(sys.argv[1:])

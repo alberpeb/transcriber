@@ -132,4 +132,9 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    # Este archivo se ejecuta por ruta: Python pone su carpeta primera en sys.path
+    # y los módulos del paquete (util.py, paths.py...) taparían a cualquier otro
+    # que se llame igual. Se saca antes de importar nada pesado.
+    _here = os.path.dirname(os.path.abspath(__file__))
+    sys.path[:] = [p for p in sys.path if os.path.abspath(p or ".") != _here]
     sys.exit(main(sys.argv[1:]))

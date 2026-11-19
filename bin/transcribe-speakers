@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # transcribe-speakers — transcribe + identifica quién habla.
-# Resuelve el repo desde la ubicación real de este script (soporta symlinks).
+# Corre el pipeline directo desde el clon, sin instalar el paquete. Lo normal es
+# usar el comando que deja `./install.sh`; esto queda para desarrollo y para que
+# los enlaces viejos de ~/.local/bin sigan andando después de un `git pull`.
 set -euo pipefail
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 REPO="$(dirname "$(dirname "$SELF")")"
-exec python3 "$REPO/transcriber.py" "$@"
+PYTHONPATH="$REPO/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m transcriber.pipeline "$@"

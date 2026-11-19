@@ -1,0 +1,4 @@
+# Todo en LF: los scripts de bash no corren con CRLF.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
