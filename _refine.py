@@ -6,6 +6,7 @@ sí puede resolverlo leyendo el contenido: quién es nombrado, quién reporta qu
 Este paso llama al CLI de Claude; si no está disponible, el pipeline sigue sin él.
 """
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -54,19 +55,33 @@ Devolvé solo eso, sin bloques de código ni comentarios tuyos.
 """
 
 
+def build_prompt(raw_text: str, context: str, meta: str) -> str:
+    return (
+        f"{INSTRUCCIONES}\n\n## Contexto\n\n{context}\n\n## Datos\n\n{meta}"
+        f"\n\n## Transcripción a revisar\n\n{raw_text}"
+    )
+
+
 def refine(raw_text: str, context: str, meta: str) -> str | None:
-    prompt = f"{INSTRUCCIONES}\n\n## Contexto\n\n{context}\n\n## Datos\n\n{meta}"
+    # En Windows `claude` puede ser claude.cmd: hay que resolver la ruta completa,
+    # y cmd.exe corta la línea de comandos en 8191 caracteres. Por eso todo
+    # (instrucciones, contexto y transcripción) viaja por stdin.
+    exe = shutil.which("claude")
+    if exe is None:
+        print("refine: no encuentro 'claude' en el PATH", file=sys.stderr)
+        return None
     try:
         proc = subprocess.run(
-            ["claude", "-p", prompt],
-            input=raw_text,
+            [exe, "-p"],
+            input=build_prompt(raw_text, context, meta),
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=TIMEOUT,
         )
-    except FileNotFoundError:
+    except OSError as e:
+        print(f"refine: no pude ejecutar claude ({e})", file=sys.stderr)
         return None
     except subprocess.TimeoutExpired:
         print("refine: el modelo tardó demasiado, se deja la versión cruda", file=sys.stderr)
