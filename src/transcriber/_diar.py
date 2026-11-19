@@ -10,7 +10,7 @@ import sys
 import wave
 
 MODEL = "pyannote/speaker-diarization-community-1"
-SMALL_GPU_GB = 6.0      # por debajo de esto, el batch por defecto (32) no entra
+SMALL_GPU_GB = 6.0      # por debajo de esto, un batch de 32 no entra
 SMALL_BATCH = 8
 
 
@@ -18,15 +18,17 @@ def log(msg):
     print(msg, file=sys.stderr, flush=True)
 
 
-def batch_size_for(vram_gb, override=None):
-    """Batch de segmentación y embeddings; None deja el que trae pyannote.
+def batch_size_for(vram_gb, current, override=None):
+    """Batch de segmentación y embeddings; None deja el que trae el modelo.
 
-    En GPUs de 4 GB el batch por defecto llena la memoria: la corrida termina
-    bien, pero llena el log de avisos de OOM del allocator de CUDA.
+    En GPUs de 4 GB el batch que configura el modelo llena la memoria: la corrida
+    termina bien, pero llena el log de avisos de OOM del allocator de CUDA. Solo
+    se baja, nunca se sube (salvo que lo pidan con TRANSCRIBER_DIAR_BATCH).
     """
     if override:
         return max(1, int(override))
-    if vram_gb is not None and vram_gb < SMALL_GPU_GB:
+    small = vram_gb is not None and vram_gb < SMALL_GPU_GB
+    if small and isinstance(current, int) and current > SMALL_BATCH:
         return SMALL_BATCH
     return None
 
@@ -83,11 +85,12 @@ def main(argv):
     vram_gb = None
     if device == "cuda":
         vram_gb = torch.cuda.get_device_properties(0).total_memory / 2**30
-    batch = batch_size_for(vram_gb, os.environ.get("TRANSCRIBER_DIAR_BATCH"))
-    if batch:
-        for attr in ("segmentation_batch_size", "embedding_batch_size"):
-            if hasattr(pipeline, attr):
-                setattr(pipeline, attr, batch)
+    for attr in ("segmentation_batch_size", "embedding_batch_size"):
+        batch = batch_size_for(
+            vram_gb, getattr(pipeline, attr, None), os.environ.get("TRANSCRIBER_DIAR_BATCH")
+        )
+        if batch and hasattr(pipeline, attr):
+            setattr(pipeline, attr, batch)
 
     kwargs = {}
     if min_spk != "-":

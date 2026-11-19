@@ -84,13 +84,19 @@ def test_plan_siempre_dos_entornos_y_pyannote_4():
 
 
 def test_batch_size_baja_en_gpus_chicas():
-    assert batch_size_for(4.0) == 8             # la GTX de 4 GB
-    assert batch_size_for(5.9) == 8
-    assert batch_size_for(16.0) is None         # se deja el de pyannote
-    assert batch_size_for(None) is None         # CPU o MPS
-    assert batch_size_for(4.0, override="2") == 2
-    assert batch_size_for(16.0, override="64") == 64
-    assert batch_size_for(4.0, override="") == 8
+    assert batch_size_for(4.0, 32) == 8         # la GTX de 4 GB
+    assert batch_size_for(5.9, 32) == 8
+    assert batch_size_for(16.0, 32) is None     # se deja el del modelo
+    assert batch_size_for(None, 32) is None     # CPU o MPS
+    assert batch_size_for(4.0, 32, override="2") == 2
+    assert batch_size_for(16.0, 32, override="64") == 64
+    assert batch_size_for(4.0, 32, override="") == 8
+
+
+def test_batch_size_nunca_sube_el_que_trae_el_modelo():
+    assert batch_size_for(4.0, 8) is None
+    assert batch_size_for(4.0, 1) is None
+    assert batch_size_for(4.0, None) is None
 
 
 def test_resolve_device_cae_a_cpu_si_torch_no_lo_tiene():

@@ -258,7 +258,8 @@ pasos 2 y 3 solos ya dan buen resultado.
 - **Windows**: el torch de PyPI es solo CPU; `setup` lo reemplaza por el build con
   CUDA del índice de PyTorch.
 - **`record-call`** es bash + `pactl` + ffmpeg sobre PulseAudio/PipeWire. Portarlo
-  a Windows (loopback por WASAPI) y a macOS (necesita BlackHole) queda pendiente.
+  a Windows (loopback por WASAPI) y a macOS (necesita BlackHole) queda pendiente:
+  [issue #1](https://github.com/alberpeb/transcriber/issues/1).
 
 Qué está probado de verdad: Linux (Fedora, GPU NVIDIA de 4 GB) es el uso diario
 desde la v0.1. En Windows 11 con una RTX 5070 Ti se probaron para la v0.2 la
@@ -295,7 +296,7 @@ revisión: si no puede correr, deja la versión cruda y lo dice.
 - **Faltan tramos** — no debería: los tramos de más de 40 s sin texto se reintentan
   por separado y el resumen dice cuántas palabras se recuperaron.
 - **Líneas `CUDACachingAllocator ... OOM` en GPUs chicas** — con menos de 6 GB de
-  VRAM el batch de pyannote se baja solo a 8 para que no aparezcan. Si igual
+  VRAM el batch de pyannote se baja solo a 8 (si venía más alto). Si igual
   aparecen y la corrida termina, son inofensivas: torch reintenta con menos
   memoria. Se puede bajar más con `TRANSCRIBER_DIAR_BATCH=4`.
 - **Va por CPU teniendo GPU** — `transcriber doctor` lo marca; se arregla con
