@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias de desarrollo
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Tests
+        run: uv run pytest -q
+
+      # Solo la ayuda: en CI no se instalan Whisper ni pyannote ni se bajan modelos.
+      - name: Los comandos arrancan
+        run: |
+          uv run transcribe-speakers --help
+          uv run transcribe --help
+          uv run transcriber --version
+
+      - name: Se instala como herramienta
+        run: |
+          uv tool install .
+          transcribe-speakers --help

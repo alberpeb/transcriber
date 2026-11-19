@@ -24,3 +24,7 @@ wheels/
 
 # Contexto real (tiene nombres de gente)
 context.md
+
+# Herramientas de desarrollo
+.pytest_cache/
+.ruff_cache/
