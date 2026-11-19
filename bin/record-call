@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# record-call — graba una llamada mezclando lo que suena (el resto) con tu microfono.
+#
+#   record-call            graba hasta Ctrl+C en ~/Grabaciones/llamada-<fecha>.m4a
+#   record-call notas      mismo, pero el archivo se llama notas-<fecha>.m4a
+#   record-call -t         al terminar, lo pasa por `transcribe`
+#
+# Toma el monitor del sink por defecto (las otras voces) y el source por defecto
+# (vos), y los mezcla en un solo archivo. Si cambias de auriculares a mitad de
+# llamada, cortá y volvé a arrancar: los dispositivos se resuelven al inicio.
+set -euo pipefail
+
+TRANSCRIBIR=0
+NOMBRE="llamada"
+for a in "$@"; do
+  case "$a" in
+    -t|--transcribe) TRANSCRIBIR=1 ;;
+    -*) echo "opcion desconocida: $a" >&2; exit 2 ;;
+    *)  NOMBRE="$a" ;;
+  esac
+done
+
+DIR="${RECORD_CALL_DIR:-$HOME/Grabaciones}"
+mkdir -p "$DIR"
+OUT="$DIR/${NOMBRE}-$(date +%Y-%m-%d_%H%M).m4a"
+
+SINK="$(pactl get-default-sink)"
+MIC="$(pactl get-default-source)"
+MON="${SINK}.monitor"
+
+# si el source por defecto ya es un monitor, no lo mezcles contra si mismo
+if [[ "$MIC" == *.monitor ]]; then
+  echo "El source por defecto es un monitor, no un microfono. Grabo solo la salida." >&2
+  MIC=""
+fi
+
+echo "salida   : $MON"
+[[ -n "$MIC" ]] && echo "microfono: $MIC"
+echo "archivo  : $OUT"
+echo "Ctrl+C para terminar."
+echo
+
+if [[ -n "$MIC" ]]; then
+  # amix con dropout_transition alto: si una punta se queda muda un rato, no sube
+  # el volumen de la otra para compensar
+  ffmpeg -hide_banner -loglevel warning \
+    -f pulse -i "$MON" \
+    -f pulse -i "$MIC" \
+    -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0,loudnorm=I=-18:TP=-2[a]" \
+    -map "[a]" -c:a aac -b:a 96k -ar 44100 "$OUT"
+else
+  ffmpeg -hide_banner -loglevel warning \
+    -f pulse -i "$MON" -c:a aac -b:a 96k -ar 44100 "$OUT"
+fi
+
+echo
+echo "Guardado: $OUT  ($(du -h "$OUT" | cut -f1))"
+
+if [[ "$TRANSCRIBIR" == "1" ]]; then
+  echo "Transcribiendo..."
+  transcribe "$OUT"
+fi

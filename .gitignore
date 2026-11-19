@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Grabaciones y salidas: nunca al repo
+*.ogg
+*.opus
+*.m4a
+*.mp3
+*.mp4
+*.mkv
+*.wav
+*.srt
+*.speakers.txt
+*.revisado.txt
+*.json
+
+# Contexto real (tiene nombres de gente)
+context.md

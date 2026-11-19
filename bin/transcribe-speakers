@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# transcribe-speakers — transcribe + identifica quién habla.
+# Resuelve el repo desde la ubicación real de este script (soporta symlinks).
+set -euo pipefail
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO="$(dirname "$(dirname "$SELF")")"
+exec python3 "$REPO/transcriber.py" "$@"

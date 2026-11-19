@@ -1,0 +1,20 @@
+[project]
+name = "transcriber"
+version = "0.1.0"
+description = "Transcribe grabaciones e identifica quién habla"
+readme = "README.md"
+authors = [
+    { name = "Alberto Pérez" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "faster-whisper>=1.2.1",
+    "pyannote-audio>=4.0.7",
+]
+
+[project.scripts]
+transcriber = "transcriber:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
