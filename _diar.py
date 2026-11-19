@@ -7,6 +7,10 @@ import sys
 import torch
 from pyannote.audio import Pipeline
 
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8", errors="replace")
+
 wav, device, min_spk, max_spk, out = sys.argv[1:6]
 
 pipeline = Pipeline.from_pretrained(
@@ -26,5 +30,5 @@ turns = [
     for seg, _, label in ann.itertracks(yield_label=True)
 ]
 
-with open(out, "w") as f:
+with open(out, "w", encoding="utf-8") as f:
     json.dump(turns, f)

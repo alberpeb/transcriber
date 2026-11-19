@@ -28,6 +28,13 @@ PYANNOTE_ENV = TOOLS / "pyannote-audio"              # torch, CUDA 13
 CONTEXT = Path.home() / ".config/transcriber/context.md"
 
 
+def utf8_console():
+    """En Windows la consola es cp1252 y rompe con tildes y eñes."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def log(msg):
     print(msg, file=sys.stderr, flush=True)
 
@@ -44,7 +51,7 @@ def duration_of(path: Path) -> float:
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, encoding="utf-8", check=True,
     )
     return float(out.stdout.strip())
 
@@ -146,11 +153,11 @@ def srt_time(sec):
 def write_outputs(blocks, src: Path, outdir: Path, language: str):
     base = outdir / src.stem
 
-    with open(f"{base}.speakers.txt", "w") as f:
+    with open(f"{base}.speakers.txt", "w", encoding="utf-8") as f:
         for b in blocks:
             f.write(f"[{hhmmss(b['start'])}] {b['speaker'] or '?'}: {b['text']}\n")
 
-    with open(f"{base}.speakers.srt", "w") as f:
+    with open(f"{base}.speakers.srt", "w", encoding="utf-8") as f:
         for i, b in enumerate(blocks, 1):
             f.write(f"{i}\n{srt_time(b['start'])} --> {srt_time(b['end'])}\n")
             f.write(f"{b['speaker'] or '?'}: {b['text']}\n\n")
@@ -166,13 +173,14 @@ def write_outputs(blocks, src: Path, outdir: Path, language: str):
             for b in blocks
         ],
     }
-    with open(f"{base}.json", "w") as f:
+    with open(f"{base}.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
 
     return base, payload
 
 
 def main():
+    utf8_console()
     p = argparse.ArgumentParser(
         description="Transcribe vídeo/audio, identifica quién habla y revisa el resultado."
     )
@@ -201,14 +209,14 @@ def main():
     outdir = args.output_dir or args.input.parent
     outdir.mkdir(parents=True, exist_ok=True)
 
-    context = args.context.read_text() if args.context.exists() else ""
+    context = args.context.read_text(encoding="utf-8") if args.context.exists() else ""
     seconds = duration_of(args.input)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         wav, asr_out, diar_out = tmp / "a.wav", tmp / "asr.json", tmp / "diar.json"
         prompt_file = tmp / "prompt.txt"
-        prompt_file.write_text(vocabulary(context))
+        prompt_file.write_text(vocabulary(context), encoding="utf-8")
 
         log(f"[1/4] Extrayendo audio de {args.input.name} ({hhmmss(seconds)})...")
         to_wav16k(args.input, wav)
@@ -219,8 +227,8 @@ def main():
         log(f"[3/4] Separando voces ({device})...")
         run_diar(wav, device, args.min_speakers, args.max_speakers, diar_out)
 
-        asr = json.loads(asr_out.read_text())
-        turns = json.loads(diar_out.read_text())
+        asr = json.loads(asr_out.read_text(encoding="utf-8"))
+        turns = json.loads(diar_out.read_text(encoding="utf-8"))
 
     if asr["gaps_checked"]:
         log(f"      {asr['gaps_checked']} tramo(s) sin texto reintentados, "

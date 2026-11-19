@@ -13,13 +13,17 @@ from pathlib import Path
 
 from faster_whisper import WhisperModel
 
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8", errors="replace")
+
 wav, model_name, language, device, out, prompt_path, duration = sys.argv[1:8]
 duration = float(duration)
 
 # Sesga el reconocimiento hacia los nombres y el vocabulario del proyecto.
 initial_prompt = None
 if prompt_path != "-" and Path(prompt_path).exists():
-    initial_prompt = Path(prompt_path).read_text().strip() or None
+    initial_prompt = Path(prompt_path).read_text(encoding="utf-8").strip() or None
 
 compute = "int8_float16" if device == "cuda" else "int8"
 model = WhisperModel(model_name, device=device, compute_type=compute)
@@ -70,7 +74,7 @@ if gaps:
             words.extend(extra)
     words.sort(key=lambda w: w["start"])
 
-with open(out, "w") as f:
+with open(out, "w", encoding="utf-8") as f:
     json.dump(
         {
             "language": detected,
