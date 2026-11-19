@@ -39,30 +39,33 @@ def vocabulary(context: str) -> str:
     return ", ".join(seen) + "." if seen else ""
 
 
-def run_worker(python, script, args, step, env=None):
+def run_worker(python, script, args, step, env=None, check=True):
     """Corre un paso en su entorno. Siempre con lista de argumentos, nunca shell."""
-    try:
-        subprocess.run(
-            [str(python), str(paths.worker(script)), *[str(a) for a in args]],
-            check=True, env=env,
-        )
-    except subprocess.CalledProcessError as e:
+    code = subprocess.run(
+        [str(python), str(paths.worker(script)), *[str(a) for a in args]], env=env,
+    ).returncode
+    if code and check:
         raise SystemExit(
-            f"Falló {step} (código {e.returncode}). "
+            f"Falló {step} (código {code}). "
             "Corré `transcriber doctor` para revisar la instalación."
-        ) from None
+        )
+    return code
 
 
-def run_asr(python, wav, model, language, device, out, prompt_file, seconds):
-    run_worker(
-        python, "_asr.py",
-        [wav, model, language or "", device, out, prompt_file, seconds],
-        "la transcripción", env=paths.asr_child_env(python),
-    )
+def run_asr(python, wav, out, model, device, seconds, language=None, prompt_file=None,
+            threads=0, check=True):
+    args = [wav, out, "--model", model, "--device", device, "--duration", seconds,
+            "--threads", threads]
+    if language:
+        args += ["--language", language]
+    if prompt_file:
+        args += ["--prompt", prompt_file]
+    return run_worker(python, "_asr.py", args, "la transcripción",
+                      env=paths.asr_child_env(python), check=check)
 
 
 def run_diar(python, wav, device, min_spk, max_spk, out):
-    run_worker(
+    return run_worker(
         python, "_diar.py", [wav, device, min_spk or "-", max_spk or "-", out],
         "la separación de voces",
     )
@@ -194,8 +197,8 @@ def main(argv=None):
         to_wav16k(args.input, wav)
 
         log(f"[2/4] Transcribiendo ({args.model}, {asr_device})...")
-        run_asr(asr_python, wav, args.model, args.language, asr_device, asr_out,
-                prompt_file, seconds)
+        run_asr(asr_python, wav, asr_out, args.model, asr_device, seconds,
+                language=args.language, prompt_file=prompt_file)
 
         log(f"[3/4] Separando voces ({diar_device})...")
         run_diar(diar_python, wav, diar_device, args.min_speakers, args.max_speakers, diar_out)

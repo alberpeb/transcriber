@@ -13,6 +13,7 @@ Las funciones puras de arriba no importan faster-whisper: se pueden testear sin
 el entorno pesado.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -127,24 +128,39 @@ def detect_language(model, audio, duration):
     return language, confidence, unanimous, votes
 
 
+def parse_args(argv):
+    p = argparse.ArgumentParser(prog="_asr.py")
+    p.add_argument("wav", help="WAV de 16 kHz mono PCM de 16 bits")
+    p.add_argument("out", help="JSON de salida")
+    p.add_argument("--model", default="large-v3-turbo")
+    p.add_argument("--device", default="cpu", choices=("cuda", "cpu"))
+    p.add_argument("--duration", type=float, required=True)
+    p.add_argument("--language", default=None)
+    p.add_argument("--prompt", default=None, help="archivo con el initial_prompt")
+    p.add_argument("--threads", type=int, default=0, help="hilos en CPU (0: los que elija)")
+    return p.parse_args(argv)
+
+
 def main(argv):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
 
-    wav, model_name, language, device, out, prompt_path, duration = argv[:7]
-    duration = float(duration)
+    args = parse_args(argv)
+    language, duration = args.language or None, args.duration
 
     add_dll_dirs()
     from faster_whisper import WhisperModel
 
     # Sesga el reconocimiento hacia los nombres y el vocabulario del proyecto.
     initial_prompt = None
-    if prompt_path != "-" and Path(prompt_path).exists():
-        initial_prompt = Path(prompt_path).read_text(encoding="utf-8").strip() or None
+    if args.prompt and Path(args.prompt).exists():
+        initial_prompt = Path(args.prompt).read_text(encoding="utf-8").strip() or None
 
-    compute = "int8_float16" if device == "cuda" else "int8"
-    model = WhisperModel(model_name, device=device, compute_type=compute)
+    compute = "int8_float16" if args.device == "cuda" else "int8"
+    model = WhisperModel(
+        args.model, device=args.device, compute_type=compute, cpu_threads=args.threads
+    )
 
     common = dict(
         vad_filter=False,          # el VAD descartaba habla real en grabaciones del celu
@@ -156,7 +172,7 @@ def main(argv):
 
     # El WAV ya viene en 16 kHz mono: se carga una vez y de ahí salen las ventanas
     # de idioma y los recortes de los huecos.
-    audio = load_wav(wav)
+    audio = load_wav(args.wav)
 
     confidence, votes = 1.0, []
     if not language:
@@ -168,31 +184,41 @@ def main(argv):
                 f"mal o traducido, pasalo a mano: -l {language}")
 
     def decode(samples, offset=0.0):
-        segments, _ = model.transcribe(samples, language=language, **common)
-        return [
-            {"start": w.start + offset, "end": w.end + offset, "word": w.word}
-            for seg in segments
-            for w in (seg.words or [])
-        ]
+        found, _ = model.transcribe(samples, language=language, **common)
+        segments, words = [], []
+        for seg in found:
+            segments.append(
+                {"start": seg.start + offset, "end": seg.end + offset, "text": seg.text}
+            )
+            words += [
+                {"start": w.start + offset, "end": w.end + offset, "word": w.word}
+                for w in (seg.words or [])
+            ]
+        return segments, words
 
-    words = decode(audio)
+    segments, words = decode(audio)
 
     # Tramos de más de 40 s sin una sola palabra: los reintenta aislados.
     gaps = find_gaps(words, duration)
     recovered = 0
     for start, end in gaps:
-        extra = decode(audio[int(start * SAMPLE_RATE):int(end * SAMPLE_RATE)], offset=start)
-        recovered += len(extra)
-        words.extend(extra)
+        more_segments, more_words = decode(
+            audio[int(start * SAMPLE_RATE):int(end * SAMPLE_RATE)], offset=start
+        )
+        recovered += len(more_words)
+        segments.extend(more_segments)
+        words.extend(more_words)
     if gaps:
+        segments.sort(key=lambda s: s["start"])
         words.sort(key=lambda w: w["start"])
 
-    with open(out, "w", encoding="utf-8") as f:
+    with open(args.out, "w", encoding="utf-8") as f:
         json.dump(
             {
                 "language": language,
                 "language_probability": round(confidence, 3),
                 "language_votes": votes,
+                "segments": segments,
                 "words": words,
                 "gaps_checked": len(gaps),
                 "words_recovered": recovered,

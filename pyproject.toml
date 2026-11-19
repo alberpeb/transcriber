@@ -16,6 +16,7 @@ dependencies = []
 [project.scripts]
 transcriber = "transcriber.cli:main"
 transcribe-speakers = "transcriber.pipeline:main"
+transcribe = "transcriber.transcribe:main"
 
 [dependency-groups]
 dev = [
