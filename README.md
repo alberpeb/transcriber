@@ -2,46 +2,51 @@
 
 [![CI](https://github.com/alberpeb/transcriber/actions/workflows/ci.yml/badge.svg)](https://github.com/alberpeb/transcriber/actions/workflows/ci.yml)
 
-Pasa una grabación a un transcript legible con los nombres de quién habla.
-Funciona en Linux, Windows y macOS.
+*[Leer en castellano](README.es.md)*
+
+Turns a recording into a readable transcript with the names of who is speaking.
+Works on Linux, Windows and macOS.
 
 ```bash
 transcribe-speakers daily.ogg
 ```
 
-Deja, al lado del archivo de entrada (o en `-o DIR`):
+It leaves, next to the input file (or in `-o DIR`):
 
-| Archivo | Qué es |
+| File | What it is |
 |---|---|
-| `X.revisado.txt` | **El bueno.** Nombres reales, turnos partidos donde corresponde, texto limpio. |
-| `X.speakers.txt` | Crudo, con las etiquetas automáticas `SPEAKER_00`. Sirve como evidencia. |
-| `X.speakers.srt` | Subtítulos. |
-| `X.json` | Bloques con tiempos, para procesar. |
+| `X.revisado.txt` | **The good one.** Real names, turns split where they should be, clean text. |
+| `X.speakers.txt` | Raw, with the automatic `SPEAKER_00` labels. Useful as evidence. |
+| `X.speakers.srt` | Subtitles. |
+| `X.json` | Blocks with timestamps, for further processing. |
 
-Sirve para reuniones, llamadas, entrevistas y audios largos de WhatsApp: todo
-corre en tu máquina, salvo el último paso (los nombres), que usa el CLI de `claude`
-y es opcional.
+Good for meetings, calls, interviews and long WhatsApp voice notes: everything
+runs on your machine except the last step (the names), which uses the `claude`
+CLI and is optional.
 
-## Los cuatro pasos
+The tool's own messages and the review prompt are in Spanish. Audio in any
+language Whisper supports works.
 
-1. **Audio** — ffmpeg lo pasa a WAV 16 kHz mono. Entra cualquier formato: mp4, mkv, ogg, opus, mp3.
-2. **Transcripción** — Whisper `large-v3-turbo` con [faster-whisper](https://github.com/SYSTRAN/faster-whisper), con marcas de tiempo por palabra.
-3. **Separación de voces** — [pyannote](https://github.com/pyannote/pyannote-audio) marca cuándo cambia el que habla.
-4. **Revisión** — un modelo de lenguaje (`claude -p`) asigna los nombres reales leyendo el contenido.
+## The four steps
 
-Después, cada palabra se asigna a la voz que más se solapa con ella en el tiempo
-y las palabras seguidas de la misma voz se juntan en un bloque.
+1. **Audio** — ffmpeg converts it to 16 kHz mono WAV. Any format goes in: mp4, mkv, ogg, opus, mp3.
+2. **Transcription** — Whisper `large-v3-turbo` through [faster-whisper](https://github.com/SYSTRAN/faster-whisper), with word-level timestamps.
+3. **Speaker diarization** — [pyannote](https://github.com/pyannote/pyannote-audio) marks when the speaker changes.
+4. **Review** — a language model (`claude -p`) assigns the real names by reading the content.
 
-## Instalación
+After that, each word goes to the voice that overlaps it the most in time, and
+consecutive words from the same voice are joined into one block.
 
-Hace falta `ffmpeg` y [`uv`](https://docs.astral.sh/uv/) (los instaladores lo bajan
-si no está). Para que valga la pena, una GPU NVIDIA; sin GPU funciona igual, unas
-20 veces más lento. Nada pide permisos de administrador.
+## Installation
+
+You need `ffmpeg` and [`uv`](https://docs.astral.sh/uv/) (the installers download
+uv if it is missing). An NVIDIA GPU makes it worthwhile; without one it still
+works, about 20 times slower. Nothing asks for administrator rights.
 
 ### Linux
 
 ```bash
-sudo dnf install ffmpeg        # o: sudo apt install ffmpeg
+sudo dnf install ffmpeg        # or: sudo apt install ffmpeg
 git clone https://github.com/alberpeb/transcriber.git
 cd transcriber
 ./install.sh
@@ -65,246 +70,255 @@ cd transcriber
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-Abrí una terminal nueva al terminar, para que tome el `PATH`.
+Open a new terminal when it finishes, so it picks up the `PATH`.
 
-### Qué hacen los instaladores
+### What the installers do
 
-Son atajos de dos comandos, que también podés correr a mano:
+They are shortcuts for two commands that you can also run by hand:
 
 ```bash
-uv tool install .      # los comandos; no arrastra torch ni nada pesado
-transcriber setup      # los dos entornos con Whisper y pyannote
+uv tool install .      # the commands; does not pull torch or anything heavy
+transcriber setup      # the two environments with Whisper and pyannote
 ```
 
-`transcriber setup` mira el hardware y decide qué instalar (ver la tabla de
-[plataformas](#plataformas)). Los entornos quedan en:
+`transcriber setup` looks at the hardware and decides what to install (see the
+[platforms](#platforms) table). The environments live in:
 
-| Sistema | Entornos | Contexto |
+| System | Environments | Context |
 |---|---|---|
 | Linux | `~/.local/share/transcriber/` | `~/.config/transcriber/context.md` |
 | macOS | `~/Library/Application Support/transcriber/` | `~/Library/Application Support/transcriber/context.md` |
 | Windows | `%LOCALAPPDATA%\transcriber\` | `%APPDATA%\transcriber\context.md` |
 
-Opciones de `setup`: `--force` rehace los entornos, `--cpu` no instala soporte de
-GPU, `--torch-backend cu128` elige a mano el build de torch (por defecto, en
-Windows con NVIDIA, lo elige uv según el driver).
+`setup` options: `--force` rebuilds the environments, `--cpu` skips GPU support,
+`--torch-backend cu128` picks the torch build by hand (by default, on Windows
+with NVIDIA, uv picks it from the driver).
 
-### El modelo de voces: `HF_TOKEN`
+### The diarization model: `HF_TOKEN`
 
-El modelo de pyannote es *gated*: gratis, pero hay que pedir acceso una vez.
+The pyannote model is *gated*: free, but you have to request access once.
 
-1. Entrá con tu cuenta a
-   [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
-   y aceptá las condiciones (pide empresa o universidad y para qué lo vas a usar).
-2. Creá un token de lectura en [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
-3. Cargalo como variable de entorno:
+1. Sign in and open
+   [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1),
+   then accept the conditions (it asks for your company or university and what
+   you will use it for).
+2. Create a read token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
+3. Set it as an environment variable:
 
-   | Sistema | Comando |
+   | System | Command |
    |---|---|
    | Linux | `echo 'export HF_TOKEN=hf_...' >> ~/.bashrc` |
    | macOS | `echo 'export HF_TOKEN=hf_...' >> ~/.zshrc` |
-   | Windows | `setx HF_TOKEN hf_...` y abrí una terminal nueva |
+   | Windows | `setx HF_TOKEN hf_...` and open a new terminal |
 
-   También sirve el token que guarda `hf auth login`. El token no va nunca en un
-   archivo del proyecto.
+   The token saved by `hf auth login` works too. The token never goes in a
+   project file.
 
-### Revisar que quedó bien
+### Check that it works
 
 ```bash
 transcriber doctor
 ```
 
-Chequea ffmpeg, uv, los dos entornos, la GPU y el dispositivo que va a usar cada
-paso, el token, el acceso al modelo y `claude`. Una línea por cosa, con lo que
-falta y cómo arreglarlo.
+It checks ffmpeg, uv, both environments, the GPU and the device each step will
+use, the token, access to the model and `claude`. One line per item, with what
+is missing and how to fix it.
 
-### Actualizar
+### Updating
 
 ```bash
 git pull
 ./install.sh           # Windows: powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-No rehace los entornos si ya existen. Si venís de la v0.1 (entornos
-`whisper-ctranslate2` y `pyannote-audio` de `uv tool`), se siguen usando tal
-cual; `transcriber setup --force` crea los nuevos cuando quieras.
+It does not rebuild the environments if they already exist. If you come from
+v0.1 (the `whisper-ctranslate2` and `pyannote-audio` environments from
+`uv tool`), they keep being used as they are; `transcriber setup --force`
+creates the new ones whenever you want.
 
-## Uso
+## Usage
 
 ```bash
-transcribe-speakers reunion.mp4                      # todo por defecto
+transcribe-speakers meeting.mp4                      # all defaults
 transcribe-speakers "WhatsApp Ptt 2026-11-19 at 11.58.49 AM.ogg" -l es
-transcribe-speakers entrevista.mkv -o salidas --min-speakers 2 --max-speakers 2
-transcribe-speakers clase.mp3 --no-refine            # sin el paso 4
+transcribe-speakers interview.mkv -o out --min-speakers 2 --max-speakers 2
+transcribe-speakers lecture.mp3 --no-refine          # without step 4
 ```
 
 ```
--l es                     idioma (por defecto lo detecta)
--o DIR                    dónde dejar los archivos
--m MODELO                 tiny | base | small | medium | large-v3 | large-v3-turbo
---min-speakers / --max-speakers   cuántas voces esperar
---context ARCHIVO         otro contexto que el de por defecto
---no-refine               saltear la revisión
---cpu                     forzar CPU (~20x más lento)
+-l es                     language (detected by default)
+-o DIR                    where to write the files
+-m MODEL                  tiny | base | small | medium | large-v3 | large-v3-turbo
+--min-speakers / --max-speakers   how many voices to expect
+--context FILE            a context other than the default one
+--no-refine               skip the review
+--cpu                     force CPU (~20x slower)
 ```
 
-### Los otros comandos
+### The other commands
 
-| Comando | Para qué |
+| Command | What for |
 |---|---|
-| `transcribe` | Solo Whisper, sin separar voces. Más rápido y no necesita token. |
-| `transcriber setup` / `doctor` | Instalar los entornos y diagnosticar. |
-| `record-call` | Graba una llamada mezclando la salida del sistema con tu micrófono. **Solo Linux.** |
+| `transcribe` | Whisper only, no diarization. Faster and needs no token. |
+| `transcriber setup` / `doctor` | Install the environments and diagnose. |
+| `record-call` | Records a call by mixing the system output with your microphone. **Linux only.** |
 
 ```bash
-transcribe clase.mp4                       # texto junto al vídeo
-transcribe -l es -f srt entrevista.mkv     # subtítulos en español
-transcribe -f all -o salidas *.ogg         # txt, srt, vtt, tsv y json
+transcribe lecture.mp4                     # text next to the video
+transcribe -l es -f srt interview.mkv      # Spanish subtitles
+transcribe -f all -o out *.ogg             # txt, srt, vtt, tsv and json
 transcribe -m medium --cpu podcast.mp3
 ```
 
-## Contexto
+## Context
 
-El archivo de contexto dice quiénes participan y qué vocabulario se usa. Se usa
-dos veces: para sesgar a Whisper hacia los nombres propios y la jerga, y para que
-el paso 4 sepa a quién asignarle cada turno. Cuanto mejor esté, mejor salen los
-nombres y menos errores de términos. Actualizalo cuando cambie el equipo.
+The context file says who takes part and what vocabulary is used. It is used
+twice: to bias Whisper towards proper names and jargon, and so that step 4 knows
+who to assign each turn to. The better it is, the better the names come out and
+the fewer term errors you get. Update it when the team changes.
 
-`transcriber setup` copia un [ejemplo](src/transcriber/context.example.md) la
-primera vez. Con `--context` usás otro para una corrida, y con la variable
-`TRANSCRIBER_CONTEXT` cambiás el de por defecto.
+`transcriber setup` copies an [example](src/transcriber/context.example.md) the
+first time. `--context` uses another one for a single run, and the
+`TRANSCRIBER_CONTEXT` variable changes the default.
 
-## Por qué está hecho así
+## Why it is built this way
 
-Cada una de estas decisiones salió de un bug real. Si algo parece raro, es por esto.
+Each of these decisions came from a real bug. If something looks odd, this is why.
 
-**El VAD está apagado (`vad_filter=False`).** El detector de voz de faster-whisper
-tiraba habla real en grabaciones hechas con el celu. Medido sobre el mismo tramo:
-119 palabras con VAD, 711 sin VAD. Queda apagado siempre, también en `transcribe`.
+**VAD is off (`vad_filter=False`).** faster-whisper's voice detector was dropping
+real speech in recordings made with a phone. Measured on the same stretch:
+119 words with VAD, 711 without. It stays off always, in `transcribe` too.
 
-**Los huecos se reintentan.** Todo tramo de más de 40 s sin ninguna palabra se
-recorta y se vuelve a decodificar aislado. Ya pasó que 6 minutos salieron casi
-vacíos. El resumen dice cuántos tramos se reintentaron y cuántas palabras se
-recuperaron.
+**Gaps are retried.** Any stretch longer than 40 s without a single word is cut
+out and decoded again on its own. It has happened that 6 minutes came out almost
+empty. The summary says how many stretches were retried and how many words were
+recovered.
 
-**`condition_on_previous_text=False` y `hallucination_silence_threshold=2`.**
-Evitan que Whisper se cuelgue repitiendo la misma frase o invente texto en los
-silencios.
+**`condition_on_previous_text=False` and `hallucination_silence_threshold=2`.**
+They keep Whisper from getting stuck repeating the same sentence or making up
+text during silences.
 
-**`initial_prompt` con el vocabulario del contexto.** Sesga el reconocimiento
-hacia los nombres propios y la jerga, que es justo lo que Whisper escribe mal.
+**`initial_prompt` with the vocabulary from the context.** It biases recognition
+towards proper names and jargon, which is exactly what Whisper gets wrong.
 
-**El idioma se vota sobre tres ventanas.** Whisper detecta el idioma en los
-primeros 30 segundos, y un programa en castellano que arranca con música salió
-detectado como inglés, todo traducido y roto. Ahora se detecta al 10%, al 50% y
-al 90% del audio y se suman las probabilidades. (`language_detection_segments`
-de faster-whisper no sirve para esto: toma segmentos consecutivos desde el
-principio.) Si la confianza es baja o las ventanas no coinciden, avisa y sugiere `-l`.
+**The language is voted over three windows.** Whisper detects the language in
+the first 30 seconds, and a Spanish show that starts with music was detected as
+English, all translated and broken. Now it is detected at 10%, 50% and 90% of
+the audio and the probabilities are added up. (faster-whisper's
+`language_detection_segments` does not help here: it takes consecutive segments
+from the start.) If confidence is low or the windows disagree, it warns and
+suggests `-l`.
 
-**Whisper y pyannote corren en entornos y procesos separados.** ctranslate2
-necesita CUDA 12 (`libcublas.so.12`, cuDNN 9) y el torch que trae pyannote viene
-con otro CUDA. En el mismo entorno explotan con
-`CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH` o `libcudnn.so.9 not found`. Son dos
-entornos en las tres plataformas, aunque en alguna no haga falta: un solo diseño
-es más fácil de mantener. El orquestador usa solo la biblioteca estándar.
+**Whisper and pyannote run in separate environments and processes.** ctranslate2
+needs CUDA 12 (`libcublas.so.12`, cuDNN 9) and the torch that pyannote brings
+ships with a different CUDA. In the same environment they blow up with
+`CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH` or `libcudnn.so.9 not found`. There
+are two environments on all three platforms, even where one would do: a single
+design is easier to maintain. The orchestrator uses only the standard library.
 
-**pyannote va a la GPU a mano** (`pipeline.to(torch.device("cuda"))`). En CPU
-anda a ~1x tiempo real (una hora de audio, una hora de espera); en GPU, ~20x.
+**pyannote is moved to the GPU by hand** (`pipeline.to(torch.device("cuda"))`).
+On CPU it runs at ~1x real time (an hour of audio, an hour of waiting); on GPU,
+~20x.
 
-**El audio se carga sin PyAV ni torchcodec.** Como ffmpeg ya dejó un WAV de
-16 kHz mono, los dos pasos lo leen con la biblioteca estándar. faster-whisper
-1.2.1 se rompe con las versiones nuevas de PyAV, y torchcodec necesita las
-librerías compartidas de FFmpeg, que en Windows y macOS suelen no estar.
+**The audio is loaded without PyAV or torchcodec.** Since ffmpeg already left a
+16 kHz mono WAV, both steps read it with the standard library. faster-whisper
+1.2.1 breaks with recent PyAV versions, and torchcodec needs FFmpeg's shared
+libraries, which are usually missing on Windows and macOS.
 
-**Una palabra nunca queda sin voz.** Si no se solapa con ningún turno, se le
-asigna el turno más cercano: no aparecen fragmentos con speaker `?`.
+**A word is never left without a voice.** If it overlaps no turn, it gets the
+nearest one: no fragments show up with speaker `?`.
 
-**El paso 4 nunca rompe el pipeline.** Si `claude` no está, venció la sesión
-("OAuth session expired") o tarda más de 15 minutos, queda la versión cruda y lo
-dice. Además tiene una guarda contra resúmenes: si la revisión trae menos del 65%
-de las palabras del crudo, se descarta. Y si había un `.revisado.txt` de una
-corrida anterior, avisa que ese archivo no es de esta corrida (no lo borra).
+**Step 4 never breaks the pipeline.** If `claude` is missing, the session expired
+("OAuth session expired") or it takes more than 15 minutes, the raw version
+stays and the tool says so. It also has a guard against summaries: if the review
+comes back with less than 65% of the words of the raw text, it is discarded. And
+if there was a `.revisado.txt` from an earlier run, it warns that the file is
+not from this run (it does not delete it).
 
-**El prompt va por stdin.** En Windows `claude` puede ser `claude.cmd`, y cmd.exe
-corta la línea de comandos en 8191 caracteres: instrucciones, contexto y
-transcripción viajan por la entrada estándar.
+**The prompt goes through stdin.** On Windows `claude` can be `claude.cmd`, and
+cmd.exe cuts the command line at 8191 characters: instructions, context and
+transcript travel through standard input.
 
-### Por qué hace falta el paso 4
+### Why step 4 is needed
 
-La separación de voces se basa en el timbre. Cuando la grabación es pobre —el celu
-grabando el parlante de la notebook, con la compresión de la llamada encima— los
-timbres se parecen demasiado y el modelo mezcla personas: dos bajo una etiqueta, o
-una misma persona partida en varias. Forzar la cantidad de voces no alcanza.
+Diarization relies on timbre. When the recording is poor (a phone recording a
+laptop speaker, with call compression on top) the timbres are too similar and
+the model mixes people up: two under one label, or one person split into
+several. Forcing the number of voices is not enough.
 
-Lo que sí funciona es leer el contenido: quién es nombrado, quién reporta qué tema,
-quién pregunta y quién responde. Eso hace el paso 4, usando las etiquetas automáticas
-solo como pista.
+What does work is reading the content: who gets named, who reports on which
+topic, who asks and who answers. That is what step 4 does, using the automatic
+labels only as a hint.
 
-**Grabando desde la compu** (`record-call`, en Linux) el audio es mucho mejor y los
-pasos 2 y 3 solos ya dan buen resultado.
+**Recording from the computer** (`record-call`, on Linux) gives much better
+audio, and steps 2 and 3 alone already give a good result.
 
-## Plataformas
+## Platforms
 
-| | Linux + NVIDIA | Windows + NVIDIA | macOS (Apple Silicon) | Sin GPU |
+| | Linux + NVIDIA | Windows + NVIDIA | macOS (Apple Silicon) | No GPU |
 |---|---|---|---|---|
 | Whisper | GPU | GPU | CPU | CPU |
-| Separación de voces | GPU | GPU | MPS; si falla, CPU | CPU (~1x tiempo real) |
-| Revisión con `claude` | sí | sí | sí | sí |
+| Diarization | GPU | GPU | MPS; CPU if it fails | CPU (~1x real time) |
+| Review with `claude` | yes | yes | yes | yes |
 | `transcribe` | GPU | GPU | CPU | CPU |
-| `record-call` | sí | no | no | solo Linux |
+| `record-call` | yes | no | no | Linux only |
 
-- **macOS**: ctranslate2 no usa la GPU de Apple, así que Whisper va por CPU
-  (`int8`). En una Mac Intel todo va por CPU.
-- **Windows**: el torch de PyPI es solo CPU; `setup` lo reemplaza por el build con
-  CUDA del índice de PyTorch.
-- **`record-call`** es bash + `pactl` + ffmpeg sobre PulseAudio/PipeWire. Portarlo
-  a Windows (loopback por WASAPI) y a macOS (necesita BlackHole) queda pendiente:
+- **macOS**: ctranslate2 does not use the Apple GPU, so Whisper runs on CPU
+  (`int8`). On an Intel Mac everything runs on CPU.
+- **Windows**: the torch on PyPI is CPU only; `setup` replaces it with the CUDA
+  build from the PyTorch index.
+- **`record-call`** is bash + `pactl` + ffmpeg on PulseAudio/PipeWire. Porting it
+  to Windows (WASAPI loopback) and macOS (needs BlackHole) is pending:
   [issue #1](https://github.com/alberpeb/transcriber/issues/1).
 
-Qué está probado de verdad: Linux (Fedora, GPU NVIDIA de 4 GB) es el uso diario
-desde la v0.1. En Windows 11 con una RTX 5070 Ti se probó para la v0.2 todo el
-recorrido: la instalación (`setup`, `doctor`), `transcribe` y los cuatro pasos
-de `transcribe-speakers` en GPU sobre un audio corto con dos voces, que salieron
-bien separadas. En macOS solo corren los tests unitarios del CI: no se probó en
-una Mac real.
+What has really been tested: Linux (Fedora, 4 GB NVIDIA GPU) has been the daily
+driver since v0.1. On Windows 11 with an RTX 5070 Ti the whole path was tested
+for v0.2: installation (`setup`, `doctor`), `transcribe` and the four steps of
+`transcribe-speakers` on GPU with a short two-voice recording, which came out
+correctly separated. On macOS only the CI unit tests run: it was not tested on a
+real Mac.
 
-### Variables de entorno
+### Environment variables
 
-| Variable | Para qué |
+| Variable | What for |
 |---|---|
-| `HF_TOKEN` | Token de HuggingFace para el modelo de voces. |
-| `TRANSCRIBER_CONTEXT` | Otro archivo de contexto por defecto. |
-| `TRANSCRIBER_HOME` | Otra carpeta para los entornos. |
-| `TRANSCRIBER_ASR_PYTHON`, `TRANSCRIBER_DIAR_PYTHON` | Usar un intérprete que ya tenés, en vez del entorno de `setup`. |
-| `TRANSCRIBER_DIAR_BATCH` | Batch de pyannote, si querés bajarlo o subirlo a mano. |
+| `HF_TOKEN` | HuggingFace token for the diarization model. |
+| `TRANSCRIBER_CONTEXT` | A different default context file. |
+| `TRANSCRIBER_HOME` | A different folder for the environments. |
+| `TRANSCRIBER_ASR_PYTHON`, `TRANSCRIBER_DIAR_PYTHON` | Use an interpreter you already have instead of the `setup` environment. |
+| `TRANSCRIBER_DIAR_BATCH` | pyannote batch size, if you want to lower or raise it by hand. |
 
-## Cuando algo falla
+## When something fails
 
-Primero, `transcriber doctor`. El pipeline nunca aborta a mitad de camino por la
-revisión: si no puede correr, deja la versión cruda y lo dice.
+First, `transcriber doctor`. The pipeline never aborts halfway because of the
+review: if it cannot run, it leaves the raw version and says so.
 
-- **"Falta el token de HuggingFace"** o **"No pude bajar el modelo de voces"** —
-  falta `HF_TOKEN` o falta aceptar las condiciones del modelo (ver
-  [arriba](#el-modelo-de-voces-hf_token)).
-- **"Failed to authenticate"** / **"OAuth session expired"** — la sesión del CLI
-  venció. Abrí una terminal, corré `claude` una vez, y volvé a lanzar el comando.
-- **"la revisión perdió contenido"** — el modelo resumió en vez de transcribir.
-  Se descarta y queda la cruda. Volvé a correrlo.
-- **Voces mezcladas en el crudo** — es esperable con grabaciones del celu; para eso
-  está el paso 4.
-- **Sale traducido o en otro idioma** — mirá la línea "Idioma detectado" del log.
-  Si avisa que la detección no es segura, pasá el idioma a mano: `-l es`.
-- **Faltan tramos** — no debería: los tramos de más de 40 s sin texto se reintentan
-  por separado y el resumen dice cuántas palabras se recuperaron.
-- **Líneas `CUDACachingAllocator ... OOM` en GPUs chicas** — con menos de 6 GB de
-  VRAM el batch de pyannote se baja solo a 8 (si venía más alto). Si igual
-  aparecen y la corrida termina, son inofensivas: torch reintenta con menos
-  memoria. Se puede bajar más con `TRANSCRIBER_DIAR_BATCH=4`.
-- **Va por CPU teniendo GPU** — `transcriber doctor` lo marca; se arregla con
-  `transcriber setup --force`.
-- **Aviso de `triton not found` en Windows** — es de torch y no afecta.
+The messages below are quoted as the tool prints them, in Spanish.
 
-## Desarrollo
+- **"Falta el token de HuggingFace"** or **"No pude bajar el modelo de voces"** —
+  `HF_TOKEN` is missing, or the model conditions have not been accepted (see
+  [above](#the-diarization-model-hf_token)).
+- **"Failed to authenticate"** / **"OAuth session expired"** — the CLI session
+  expired. Open a terminal, run `claude` once, and launch the command again.
+- **"la revisión perdió contenido"** — the model summarized instead of
+  transcribing. The review is discarded and the raw version stays. Run it again.
+- **Mixed-up voices in the raw file** — expected with phone recordings; that is
+  what step 4 is for.
+- **It comes out translated or in another language** — look at the "Idioma
+  detectado" line in the log. If it warns that detection is not reliable, pass
+  the language by hand: `-l es`.
+- **Stretches are missing** — they should not be: stretches longer than 40 s
+  with no text are retried separately, and the summary says how many words were
+  recovered.
+- **`CUDACachingAllocator ... OOM` lines on small GPUs** — with less than 6 GB of
+  VRAM the pyannote batch is lowered to 8 automatically (if it was higher). If
+  they still show up and the run finishes, they are harmless: torch retries with
+  less memory. You can lower it further with `TRANSCRIBER_DIAR_BATCH=4`.
+- **It runs on CPU although there is a GPU** — `transcriber doctor` flags it; fix
+  it with `transcriber setup --force`.
+- **`triton not found` warning on Windows** — it comes from torch and has no effect.
+
+## Development
 
 ```bash
 uv sync
@@ -312,20 +326,21 @@ uv run ruff check .
 uv run pytest
 ```
 
-Los tests cubren lo puro (asignación de voces, tiempos, huecos, votación de idioma,
-la guarda de la revisión, rutas por plataforma, elección de dispositivo) y corren
-en Linux, Windows y macOS sin instalar Whisper ni bajar modelos. Los cambios están
-en el [CHANGELOG](CHANGELOG.md).
+The tests cover the pure parts (speaker assignment, timestamps, gaps, language
+voting, the review guard, per-platform paths, device selection) and run on
+Linux, Windows and macOS without installing Whisper or downloading models.
+Changes are listed in the [CHANGELOG](CHANGELOG.md) (in Spanish).
 
-## Licencias
+## Licenses
 
-- **Este código**: [MIT](LICENSE).
-- **Whisper** (los pesos de OpenAI, `large-v3-turbo`): MIT. faster-whisper,
-  CTranslate2 y pyannote.audio (las librerías) también son MIT.
-- **`pyannote/speaker-diarization-community-1`** (el modelo de voces): la ficha del
-  modelo en HuggingFace lo publica como `cc-by-4.0` y dice: *"This pipeline is
+- **This code**: [MIT](LICENSE).
+- **Whisper** (OpenAI's weights, `large-v3-turbo`): MIT. faster-whisper,
+  CTranslate2 and pyannote.audio (the libraries) are MIT too.
+- **`pyannote/speaker-diarization-community-1`** (the diarization model): its
+  HuggingFace model card publishes it as `cc-by-4.0` and says: *"This pipeline is
   released under the CC-BY-4.0 license and will always remain freely
-  accessible."* Es gated: hay que compartir tus datos de contacto para bajarlo.
-  CC-BY pide atribución si redistribuís el modelo o algo derivado de él.
-- **ffmpeg** no se distribuye con este proyecto; lo instalás aparte con su propia
-  licencia.
+  accessible."* It is gated: you have to share your contact details to download
+  it. CC-BY requires attribution if you redistribute the model or something
+  derived from it.
+- **ffmpeg** is not distributed with this project; you install it separately
+  under its own license.

@@ -1,7 +1,7 @@
 [project]
 name = "transcriber"
 version = "0.2.0"
-description = "Transcribe grabaciones e identifica quién habla"
+description = "Transcribe recordings and tell who is speaking"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

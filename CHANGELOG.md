@@ -4,6 +4,13 @@ Los cambios importantes de cada versión. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y las versiones,
 [SemVer](https://semver.org/lang/es/).
 
+## Sin publicar
+
+### Cambiado
+
+- El `README.md` pasa a estar en inglés; el de castellano queda en
+  `README.es.md`.
+
 ## [0.2.0] - 2026-11-19
 
 Multiplataforma: Linux, Windows y macOS.
