@@ -262,10 +262,11 @@ pasos 2 y 3 solos ya dan buen resultado.
   [issue #1](https://github.com/alberpeb/transcriber/issues/1).
 
 Qué está probado de verdad: Linux (Fedora, GPU NVIDIA de 4 GB) es el uso diario
-desde la v0.1. En Windows 11 con una RTX 5070 Ti se probaron para la v0.2 la
-instalación (`setup`, `doctor`), Whisper en GPU, `transcribe` y la revisión con
-`claude`. En macOS solo corren los tests unitarios del CI: no se probó en una Mac
-real.
+desde la v0.1. En Windows 11 con una RTX 5070 Ti se probó para la v0.2 todo el
+recorrido: la instalación (`setup`, `doctor`), `transcribe` y los cuatro pasos
+de `transcribe-speakers` en GPU sobre un audio corto con dos voces, que salieron
+bien separadas. En macOS solo corren los tests unitarios del CI: no se probó en
+una Mac real.
 
 ### Variables de entorno
 
